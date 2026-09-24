@@ -4,7 +4,6 @@ Semester 3 Deep Learning Project
 
 ## Team
 - Mohammed Nazil Shaikh
-- Prithvi Rawal
 
 ## Project Overview
 This project implements a Convolutional Autoencoder to remove noise from corrupted images while preserving important visual features. The model is trained on pairs of noisy and clean images and evaluated using PSNR and SSIM metrics.
