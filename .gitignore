@@ -216,3 +216,27 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Virtual environment
+venv/
+env/
+
+# PyTorch model weights
+*.pth
+*.pt
+*.ckpt
+
+# Data (large files, don't push)
+data/
+
+# But keep example images
+!data/examples/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
