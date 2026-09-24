@@ -52,8 +52,14 @@
 ### 4.1 Dataset Selection
 *(DIV2K — why we chose it, size, resolution, contents)*
 
+
 ### 4.2 Dataset Statistics
-*(Number of images, resolution distribution)*
+
+| Split | Number of Images | Resolution | Format |
+|-------|-----------------|------------|--------|
+| Total | 100 | ~2K (2048×1080) | PNG |
+
+**Note:** We are using the Div2K_Random100 subset from Kaggle, which contains 100 high-resolution images randomly sampled from the full DIV2K dataset. All HR images are stored in `data/clean/`. Training will use patch-based extraction with data augmentation, yielding thousands of training samples per epoch.
 
 ### 4.3 Preprocessing Pipeline
 *(Resize, normalize, train/val/test split)*

@@ -227,10 +227,12 @@ env/
 *.ckpt
 
 # Data (large files, don't push)
-data/
-
+data/*
+!data/examples/
+!data/examples/*.png
 # But keep example images
 !data/examples/
+
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
@@ -240,3 +242,6 @@ data/
 
 # macOS
 .DS_Store
+
+# Div2K extracted folder (if accidentally re-extracted at root)
+Div2K_Random100/
