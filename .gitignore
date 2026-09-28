@@ -221,10 +221,11 @@ __marimo__/
 venv/
 env/
 
-# PyTorch model weights
-*.pth
+# PyTorch model weights (temporary)
 *.pt
 *.ckpt
+*.pth
+!models/autoencoder.pth
 
 # Data (large files, don't push)
 data/*
