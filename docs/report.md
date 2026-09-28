@@ -207,7 +207,64 @@ Adam with learning rate 1e-3. Adam adapts the learning rate per parameter, which
 Apple MacBook Air (CPU only). Training on a GPU is not required for this project but would speed up iteration significantly.
 
 ### 5.4 Evaluation Metrics
-*(PSNR, SSIM, MSE — formulas and meaning)*
+
+We use three quantitative metrics plus visual comparison to evaluate the model.
+
+**MSE (Mean Squared Error)**
+
+The same quantity used as the training loss:
+
+    MSE = (1/N) * sum( (clean - denoised)^2 )
+
+Lower is better. Zero means perfect reconstruction. Typical values for denoising are between 0.001 and 0.01 on normalized images.
+
+**PSNR (Peak Signal-to-Noise Ratio)**
+
+    PSNR = 10 * log10(1 / MSE)
+
+Higher is better. Measured in decibels (dB). For normalized images with range [0, 1]:
+
+| PSNR | Quality |
+|------|---------|
+| Below 20 dB | Very poor |
+| 20–25 dB | Poor |
+| 25–30 dB | Acceptable |
+| 30–35 dB | Good |
+| Above 35 dB | Excellent |
+
+For reference, Gaussian noise at sigma=25 on a clean image typically produces a PSNR around 20 dB. A good denoiser recovers to 28–32 dB.
+
+**SSIM (Structural Similarity Index)**
+
+SSIM compares local patterns of luminance, contrast, and structure between two images. Values range from -1 to 1, where 1 means the images are identical. SSIM correlates better with human perception than PSNR, especially for images where pixel-level differences are large but visual quality is good.
+
+We compute SSIM using `skimage.metrics.structural_similarity` with `channel_axis=2` and `data_range=1.0`.
+
+**Visual Comparison**
+
+We also present side-by-side comparisons:
+
+    Noisy input | Denoised output | Clean ground truth
+
+This provides qualitative evidence of performance and helps identify failure cases (blurring, artifacts, lost details) that metrics alone may not capture.
+
+**Sanity Check Run**
+
+Before full training, we ran a small sanity check with 10 images, 2 epochs, and 64×64 patches. The purpose was to verify the end-to-end pipeline (data loading, forward pass, loss computation, backpropagation, validation metrics, and model saving).
+
+Results after 2 epochs:
+
+| Epoch | Train Loss | Val Loss | PSNR | SSIM |
+|-------|-----------|----------|------|------|
+| 1 | 0.07179 | 0.13095 | 8.83 dB | 0.2181 |
+| 2 | 0.08571 | 0.09515 | 10.22 dB | 0.0371 |
+
+These numbers are intentionally low because:
+- Only 9 training samples were used
+- Only 2 epochs were run
+- Validation used a single image, making SSIM highly unstable
+
+The pipeline works end-to-end. Full training on 100 images for 20–50 epochs with 128×128 patches is expected to reach PSNR of 25–32 dB.
 
 ### 5.5 Baseline Methods
 *(Traditional filters used for comparison)*
