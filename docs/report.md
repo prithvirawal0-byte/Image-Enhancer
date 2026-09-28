@@ -72,7 +72,52 @@
 ## 5. Methodology
 
 ### 5.1 Noise Generation
-*(Gaussian, salt-and-pepper, speckle — formulas, sigma values)*
+
+We simulate three types of noise to train and evaluate our denoising model.
+
+**Gaussian Noise**
+
+Gaussian noise is additive noise drawn from a normal distribution:
+
+    noisy(x, y) = clean(x, y) + N(0, sigma^2)
+
+Each pixel is independently corrupted with a random value from a normal distribution with mean 0 and standard deviation sigma. We use three standard noise levels:
+
+| Sigma | Noise Level | Description |
+|-------|-------------|-------------|
+| 15 | Mild | Good quality sensor |
+| 25 | Moderate | Standard denoising benchmark |
+| 50 | Severe | Low-light or poor sensor |
+
+**Salt-and-Pepper Noise**
+
+A fraction of pixels are randomly set to either 0 (pepper) or 255 (salt). This simulates dead pixels or transmission errors. We use 5% corruption as the standard rate.
+
+**Speckle Noise**
+
+Multiplicative noise where the corruption is proportional to the pixel value:
+
+    noisy(x, y) = clean(x, y) + clean(x, y) * N(0, sigma^2)
+
+This is common in radar and medical imaging.
+
+**Implementation**
+
+The noise generation module is implemented in `src/add_noise.py`. It provides:
+
+- `add_gaussian_noise(image, sigma)` — additive Gaussian noise
+- `add_salt_pepper_noise(image, amount)` — impulsive noise
+- `add_speckle_noise(image, sigma)` — multiplicative noise
+- `generate_noisy_images(...)` — batch processing over a folder
+- `visualize_comparison(...)` — side-by-side visualization
+
+For training, noise is added on-the-fly in each batch so the model sees different noise realizations every epoch. This improves generalization. For evaluation, we pre-generate noisy versions of the test set with fixed random seeds so results are reproducible.
+
+A sample comparison of a clean DIV2K image and its Gaussian-noisy version (sigma=25) is shown below:
+
+![Noise comparison](noise_comparison.png)
+
+The visual degradation is clearly visible, with grain appearing across flat regions and edges becoming less defined.
 
 ### 5.2 Model Architecture
 *(Convolutional Autoencoder — layer by layer description)*
