@@ -120,7 +120,6 @@ A sample comparison of a clean DIV2K image and its Gaussian-noisy version (sigma
 The visual degradation is clearly visible, with grain appearing across flat regions and edges becoming less defined.
 
 ### 5.2 Model Architecture
-### 5.2 Model Architecture
 
 We implement a convolutional autoencoder with an encoder–decoder structure.
 
@@ -159,7 +158,53 @@ Autoencoders are well suited for denoising because:
 
 **Input/Output:** Both are (3, H, W) tensors normalized to [0, 1]. The output is the model's estimate of the clean image.
 ### 5.3 Training Procedure
-*(Loss function, optimizer, batch size, epochs, hardware)*
+
+**Data Pipeline**
+
+Training uses a custom PyTorch Dataset (`src/dataset.py`) that:
+
+1. Loads a clean image from `data/clean/`
+2. Randomly crops a 128×128 patch
+3. Normalizes pixel values from [0, 255] to [0, 1]
+4. Adds Gaussian noise with a given sigma to create the noisy input
+5. Returns (noisy_patch, clean_patch) as tensors of shape (3, 128, 128)
+
+Because patches are cropped randomly at every epoch, the model sees a different training sample each time. This acts as data augmentation and effectively multiplies the dataset size.
+
+**Train / Validation Split**
+
+The dataset is split 90% train / 10% validation using a fixed random seed for reproducibility.
+
+**On-the-fly Noise**
+
+Noise is added inside `__getitem__`, so:
+- Each epoch sees different noise realizations
+- No pre-generated noisy images are needed on disk
+- The same pipeline can produce any noise level by changing `sigma`
+
+**Loss Function**
+
+Mean Squared Error (MSE):
+
+    L = (1/N) * sum( (clean - denoised)^2 )
+
+MSE penalizes pixel-level differences and is the standard loss for denoising.
+
+**Optimizer**
+
+Adam with learning rate 1e-3. Adam adapts the learning rate per parameter, which works well for image reconstruction tasks without extensive tuning.
+
+**Batch Size**
+
+8 patches per batch. This fits comfortably in CPU memory for 128×128×3 tensors.
+
+**Epochs**
+
+20–50 depending on available time. On CPU, each epoch takes 1–3 minutes on 100 images with patch_size=128 and batch_size=8.
+
+**Hardware**
+
+Apple MacBook Air (CPU only). Training on a GPU is not required for this project but would speed up iteration significantly.
 
 ### 5.4 Evaluation Metrics
 *(PSNR, SSIM, MSE — formulas and meaning)*
