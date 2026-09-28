@@ -26,6 +26,7 @@ APP_TITLE = "Image Denoiser"
 APP_SUBTITLE = "U-Net Convolutional Autoencoder"
 MODEL_PATH = "models/autoencoder.pth"
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
+NOISY_SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "noisy_samples")
 
 
 # ---------------- STYLING ----------------
@@ -38,70 +39,36 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .stApp {
-        background: linear-gradient(135deg, #0e1117 0%, #1a1d2e 100%);
-    }
-    h1 {
-        color: #ffffff;
-        font-weight: 700;
-        letter-spacing: -0.5px;
-    }
-    h2, h3 {
-        color: #e6e6e6;
-    }
-    .subtitle {
-        color: #9aa0b4;
-        font-size: 1.1rem;
-        margin-top: -15px;
-        margin-bottom: 25px;
-    }
+    .stApp { background: linear-gradient(135deg, #0e1117 0%, #1a1d2e 100%); }
+    h1 { color: #ffffff; font-weight: 700; letter-spacing: -0.5px; }
+    h2, h3 { color: #e6e6e6; }
+    .subtitle { color: #9aa0b4; font-size: 1.1rem; margin-top: -15px; margin-bottom: 25px; }
     .metric-card {
         background: linear-gradient(135deg, #1e2130 0%, #2a2e45 100%);
-        padding: 20px;
-        border-radius: 12px;
-        text-align: center;
-        border: 1px solid #2e3450;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        padding: 20px; border-radius: 12px; text-align: center;
+        border: 1px solid #2e3450; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
     .metric-label {
-        color: #8b92b0;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 5px;
+        color: #8b92b0; font-size: 0.85rem; text-transform: uppercase;
+        letter-spacing: 1px; margin-bottom: 5px;
     }
-    .metric-value {
-        color: #4ade80;
-        font-size: 1.8rem;
-        font-weight: 700;
-    }
-    .metric-delta {
-        color: #facc15;
-        font-size: 0.9rem;
-        margin-top: 4px;
-    }
+    .metric-value { color: #4ade80; font-size: 1.8rem; font-weight: 700; }
+    .metric-delta { color: #facc15; font-size: 0.9rem; margin-top: 4px; }
     .stButton > button {
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-        color: white;
-        border: none;
-        padding: 12px 28px;
-        border-radius: 10px;
-        font-size: 1rem;
-        font-weight: 600;
-        transition: all 0.2s;
+        color: white; border: none; padding: 12px 28px; border-radius: 10px;
+        font-size: 1rem; font-weight: 600; transition: all 0.2s;
     }
     .stButton > button:hover {
         background: linear-gradient(135deg, #7c7ff5 0%, #a78bfa 100%);
         transform: translateY(-1px);
     }
-    div[data-testid="stImage"] img {
-        border-radius: 12px;
-        border: 1px solid #2e3450;
-    }
-    .upload-note {
-        color: #9aa0b4;
-        font-size: 0.9rem;
-        padding: 10px 0;
+    div[data-testid="stImage"] img { border-radius: 12px; border: 1px solid #2e3450; }
+    .upload-note { color: #9aa0b4; font-size: 0.9rem; padding: 10px 0; }
+    .info-box {
+        background: #1e2130; border-left: 4px solid #6366f1;
+        padding: 12px 16px; border-radius: 8px; color: #c7cbe0;
+        font-size: 0.9rem; margin: 12px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -175,20 +142,50 @@ if model is None:
 # Sidebar controls
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
-    sigma = st.radio(
-        "Noise level (sigma)",
-        options=[15, 25, 50],
-        index=1,
+
+    image_state = st.radio(
+        "Image state",
+        options=["clean", "noisy"],
+        index=0,
         format_func=lambda x: {
-            15: "Mild (σ=15)",
-            25: "Moderate (σ=25)",
-            50: "Severe (σ=50)",
+            "clean": "Clean image (test the model)",
+            "noisy": "Already noisy (denoise it)",
         }[x],
     )
+
+    if image_state == "clean":
+        sigma = st.radio(
+            "Noise level to add (σ)",
+            options=[15, 25, 50],
+            index=1,
+            format_func=lambda x: {
+                15: "Mild (σ=15)",
+                25: "Moderate (σ=25)",
+                50: "Severe (σ=50)",
+            }[x],
+        )
+    else:
+        sigma = None
+
     st.markdown("---")
     st.caption("U-Net · 1.93M parameters")
     st.caption("Trained on Div2K_Random100 · 40 epochs")
     st.caption(f"Device: `{device}`")
+    st.markdown("---")
+    st.caption("⚠️ Removes **noise only**. Blurry images stay blurry.")
+
+
+# Info banner for noisy mode
+if image_state == "noisy":
+    st.markdown(
+        '<div class="info-box">'
+        "<b>Already-noisy mode:</b> The app denoises your image directly. "
+        "PSNR and SSIM are hidden because we don't have a clean reference. "
+        "The <b>pre-noised samples</b> below were generated with our own "
+        "Gaussian noise function at σ=25 — the same noise the model was trained on."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # Input mode
@@ -200,7 +197,7 @@ mode = st.radio(
     label_visibility="collapsed",
 )
 
-clean_img = None
+input_img = None
 source_name = None
 
 if mode == "📤 Upload your own":
@@ -210,107 +207,156 @@ if mode == "📤 Upload your own":
         label_visibility="collapsed",
     )
     if uploaded is not None:
-        clean_img = load_uploaded(uploaded.getvalue())
+        input_img = load_uploaded(uploaded.getvalue())
         source_name = uploaded.name
     else:
         st.markdown(
             '<div class="upload-note">No file uploaded yet. '
-            "Or switch to <b>Pick a sample</b> to try an image from the dataset.</div>",
+            "Or switch to <b>Pick a sample</b>.</div>",
             unsafe_allow_html=True,
         )
 else:
+    # Choose which sample set to show based on image state
+    if image_state == "clean":
+        active_dir = SAMPLES_DIR
+        active_label = "Clean samples"
+    else:
+        active_dir = NOISY_SAMPLES_DIR
+        active_label = "Pre-noised samples (σ=25)"
+
     sample_files = sorted([
-        f for f in os.listdir(SAMPLES_DIR)
+        f for f in os.listdir(active_dir)
         if f.lower().endswith((".png", ".jpg", ".jpeg"))
     ])
+
     if not sample_files:
-        st.warning("No sample images found in app/samples/")
+        st.warning(f"No sample images found in {active_dir}")
         st.stop()
 
-    if "selected_sample" not in st.session_state:
-        st.session_state.selected_sample = sample_files[0]
+    st.caption(f"**{active_label}** — click any thumbnail to use it")
 
-    cols = st.columns(len(sample_files))
-    for i, fname in enumerate(sample_files):
-        with cols[i]:
-            img = Image.open(os.path.join(SAMPLES_DIR, fname))
-            st.image(img, use_container_width=True)
-            if st.button(f"Use {fname}", key=f"btn_{fname}"):
-                st.session_state.selected_sample = fname
-                st.rerun()
+    state_key = f"selected_sample_{image_state}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = sample_files[0]
 
-    clean_img = load_sample(
-        os.path.join(SAMPLES_DIR, st.session_state.selected_sample)
+    per_row = 5
+    rows = (len(sample_files) + per_row - 1) // per_row
+
+    for r in range(rows):
+        cols = st.columns(per_row)
+        for c in range(per_row):
+            idx = r * per_row + c
+            if idx >= len(sample_files):
+                break
+            fname = sample_files[idx]
+            with cols[c]:
+                img = Image.open(os.path.join(active_dir, fname))
+                st.image(img, use_container_width=True)
+
+                is_selected = st.session_state[state_key] == fname
+                btn_label = "✓ Selected" if is_selected else "Use"
+
+                if st.button(btn_label, key=f"btn_{image_state}_{fname}",
+                             use_container_width=True):
+                    st.session_state[state_key] = fname
+                    st.rerun()
+
+    input_img = load_sample(
+        os.path.join(active_dir, st.session_state[state_key])
     )
-    source_name = st.session_state.selected_sample
+    source_name = st.session_state[state_key]
 
 
 # Denoise button
-if clean_img is not None:
+if input_img is not None:
     st.markdown(f"*Selected: `{source_name}`*")
 
     if st.button("🚀 Denoise Image"):
         with st.spinner("Running U-Net inference..."):
-            noisy_img = add_gaussian_noise(clean_img, sigma)
-            denoised_img = denoise(model, device, noisy_img)
+            if image_state == "clean":
+                clean_img = input_img
+                noisy_img = add_gaussian_noise(clean_img, sigma)
+                denoised_img = denoise(model, device, noisy_img)
 
-            psnr_noisy = compute_psnr(noisy_img, clean_img)
-            psnr_denoised = compute_psnr(denoised_img, clean_img)
-            ssim_noisy = compute_ssim(noisy_img, clean_img)
-            ssim_denoised = compute_ssim(denoised_img, clean_img)
+                psnr_noisy = compute_psnr(noisy_img, clean_img)
+                psnr_denoised = compute_psnr(denoised_img, clean_img)
+                ssim_noisy = compute_ssim(noisy_img, clean_img)
+                ssim_denoised = compute_ssim(denoised_img, clean_img)
+            else:
+                clean_img = None
+                noisy_img = input_img
+                denoised_img = denoise(model, device, noisy_img)
+                psnr_noisy = psnr_denoised = None
+                ssim_noisy = ssim_denoised = None
 
         st.markdown("### 2. Results")
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown("**Noisy Input**")
-            st.image(noisy_img, use_container_width=True)
-        with col2:
-            st.markdown("**Denoised (U-Net)**")
-            st.image(denoised_img, use_container_width=True)
-        with col3:
-            st.markdown("**Original (Clean)**")
-            st.image(clean_img, use_container_width=True)
+        if image_state == "clean":
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**Noisy Input**")
+                st.image(noisy_img, use_container_width=True)
+            with col2:
+                st.markdown("**Denoised (U-Net)**")
+                st.image(denoised_img, use_container_width=True)
+            with col3:
+                st.markdown("**Original (Clean)**")
+                st.image(clean_img, use_container_width=True)
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Uploaded (Noisy)**")
+                st.image(noisy_img, use_container_width=True)
+            with col2:
+                st.markdown("**Denoised (U-Net)**")
+                st.image(denoised_img, use_container_width=True)
 
+        # Metrics only in clean mode
         st.markdown("### 3. Metrics")
-
-        m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">PSNR · Noisy</div>
-                <div class="metric-value">{psnr_noisy:.2f}</div>
-                <div class="metric-delta">dB</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m2:
-            delta = psnr_denoised - psnr_noisy
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">PSNR · Denoised</div>
-                <div class="metric-value">{psnr_denoised:.2f}</div>
-                <div class="metric-delta">+{delta:.2f} dB</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m3:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">SSIM · Noisy</div>
-                <div class="metric-value">{ssim_noisy:.4f}</div>
-                <div class="metric-delta">&nbsp;</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with m4:
-            delta_s = ssim_denoised - ssim_noisy
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">SSIM · Denoised</div>
-                <div class="metric-value">{ssim_denoised:.4f}</div>
-                <div class="metric-delta">+{delta_s:.4f}</div>
-            </div>
-            """, unsafe_allow_html=True)
+        if image_state == "clean":
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">PSNR · Noisy</div>
+                    <div class="metric-value">{psnr_noisy:.2f}</div>
+                    <div class="metric-delta">dB</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with m2:
+                delta = psnr_denoised - psnr_noisy
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">PSNR · Denoised</div>
+                    <div class="metric-value">{psnr_denoised:.2f}</div>
+                    <div class="metric-delta">+{delta:.2f} dB</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with m3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">SSIM · Noisy</div>
+                    <div class="metric-value">{ssim_noisy:.4f}</div>
+                    <div class="metric-delta">&nbsp;</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with m4:
+                delta_s = ssim_denoised - ssim_noisy
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-label">SSIM · Denoised</div>
+                    <div class="metric-value">{ssim_denoised:.4f}</div>
+                    <div class="metric-delta">+{delta_s:.4f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info(
+                "No metrics available — the input is already noisy, so we "
+                "don't have a clean reference image to compute PSNR or SSIM."
+            )
 
         st.markdown("---")
         st.caption(
             "U-Net trained on Div2K_Random100 · 40 epochs · sigma=25"
         )
+        
