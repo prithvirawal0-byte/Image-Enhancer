@@ -470,8 +470,40 @@ Key observations:
 - The coral image (0785.png) shows slight over-smoothing — fine textures are lost, resulting in minimal PSNR change.
 - Overall, the model preserves color and structure while removing visible grain.
 
-### 6.5 Baseline Comparison
-*(Will be filled after comparing with Gaussian and Median filters)*
+ ### 6.5 Comparison with Baselines
+
+We compare our U-Net against two traditional denoising filters at sigma=25 on the same 5 test images.
+
+| Method | PSNR (dB) | SSIM |
+|--------|-----------|------|
+| Noisy (no denoising) | 20.85 | 0.5842 |
+| Gaussian filter (5×5) | 21.61 | 0.6531 |
+| Median filter (5×5) | 20.67 | 0.5860 |
+| **U-Net (ours)** | **23.16** | **0.7673** |
+
+Per-image results:
+
+| Image | Content | Gaussian | Median | U-Net | Best |
+|-------|---------|----------|--------|-------|------|
+| 0762.png | Building facade | 19.61 | 19.05 | **24.21** | U-Net |
+| 0764.png | Sunset landscape | **28.49** | 28.60 | 27.74 | Gaussian/Median |
+| 0778.png | Indoor market | 19.25 | 17.70 | **21.39** | U-Net |
+| 0785.png | Coral texture | **20.79** | 19.60 | 20.10 | Gaussian |
+| 0795.png | Group photo | 19.92 | 18.42 | **22.36** | U-Net |
+
+**Observations:**
+
+1. **U-Net wins overall** in both PSNR (+2.31 dB over Gaussian, +2.49 dB over Median) and SSIM. On structured images (buildings, markets, people), U-Net preserves edges and details that traditional filters blur away.
+
+2. **The Gaussian filter wins on the sunset image (0764.png).** The sunset is dominated by smooth gradients and large areas of uniform color. There is little high-frequency texture to preserve, so blurring does minimal harm while effectively removing noise. Our U-Net slightly over-smooths this image — a known limitation of MSE-trained models.
+
+3. **The Gaussian filter edges out U-Net on the coral image (0785.png)** by a small margin. The coral's dense, high-frequency texture is similar in statistical character to Gaussian noise, so a simple blur happens to help more than the U-Net's patch-based reconstruction.
+
+4. **The Median filter barely improves over the noisy baseline** (20.67 vs 20.85 dB — actually slightly worse). This is expected: the Median filter is designed for impulsive noise (salt-and-pepper), not additive Gaussian noise. It removes isolated outliers but cannot handle smooth random perturbations.
+
+**Conclusion:** The U-Net is the strongest method overall, especially on images with clear structure. Traditional filters remain competitive on homogeneous images with smooth gradients, which motivates future work on hybrid or adaptive denoising approaches.
+
+The bar chart (`docs/baseline_comparison_sigma25.png`) visualizes this comparison.
 
 ## 7. Error Analysis
 
