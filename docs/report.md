@@ -120,8 +120,44 @@ A sample comparison of a clean DIV2K image and its Gaussian-noisy version (sigma
 The visual degradation is clearly visible, with grain appearing across flat regions and edges becoming less defined.
 
 ### 5.2 Model Architecture
-*(Convolutional Autoencoder — layer by layer description)*
+### 5.2 Model Architecture
 
+We implement a convolutional autoencoder with an encoder–decoder structure.
+
+**Encoder**
+
+The encoder progressively compresses the input image using convolutional blocks:
+
+| Layer | Type | Channels | Output Size (for 128×128 input) |
+|-------|------|----------|--------------------------------|
+| Block 1 | Conv 3×3 + ReLU × 2 + MaxPool | 3 → 32 | 64 × 64 |
+| Block 2 | Conv 3×3 + ReLU × 2 + MaxPool | 32 → 64 | 32 × 32 |
+| Block 3 | Conv 3×3 + ReLU × 2 | 64 → 128 | 32 × 32 |
+
+The encoder learns a compact feature representation that captures the structural content of the image while suppressing noise.
+
+**Decoder**
+
+The decoder reconstructs the image using transposed convolutions:
+
+| Layer | Type | Channels | Output Size |
+|-------|------|----------|-------------|
+| Block 3 reverse | Conv 3×3 + ReLU + ConvTranspose | 128 → 64 | 64 × 64 |
+| Block 2 reverse | Conv 3×3 + ReLU + ConvTranspose | 64 → 32 | 128 × 128 |
+| Block 1 reverse | Conv 3×3 + ReLU + Conv 3×3 + Sigmoid | 32 → 3 | 128 × 128 |
+
+The final Sigmoid activation constrains the output to [0, 1], matching the normalized input range.
+
+**Why an autoencoder?**
+
+Autoencoders are well suited for denoising because:
+- The bottleneck forces the model to learn a compact representation
+- Noise is random and hard to encode compactly, so it gets discarded
+- The decoder reconstructs clean structure from the compressed representation
+
+**Model size:** 522,691 trainable parameters.
+
+**Input/Output:** Both are (3, H, W) tensors normalized to [0, 1]. The output is the model's estimate of the clean image.
 ### 5.3 Training Procedure
 *(Loss function, optimizer, batch size, epochs, hardware)*
 
