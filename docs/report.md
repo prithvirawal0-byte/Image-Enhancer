@@ -581,15 +581,64 @@ The visualization in `docs/error_analysis.png` shows all three cases side by sid
 ## 8. Demo / User Interface
 
 ### 8.1 Design
-*(Streamlit/Gradio layout)*
+
+We built a web interface using **Streamlit** to demonstrate the denoising pipeline. The app runs locally on `http://localhost:8501` and provides an interactive way to test the U-Net model.
+
+Design principles:
+
+- **Dark gradient background** for a modern, professional look
+- **Sidebar controls** to keep the main area focused on results
+- **Custom CSS** for rounded metric cards, gradient buttons, and consistent typography
+- **No visual clutter** — three simple steps: choose image → denoise → view results
 
 ### 8.2 Features
-*(Upload, noise controls, metrics, comparison)*
+
+**Input options:**
+
+1. **Upload your own image** — drag-and-drop or browse for a JPG/PNG
+2. **Pick a sample** — three built-in images from the Div2K dataset (starfish, aqueduct, building) that load with a single click
+
+**Noise controls:**
+
+- Radio selector for noise level: σ=15 (mild), σ=25 (moderate), σ=50 (severe)
+- Default is σ=25, the standard benchmark
+
+**Results display:**
+
+- Side-by-side comparison: Noisy Input | Denoised (U-Net) | Original (Clean)
+- Four metric cards:
+    - PSNR · Noisy (dB)
+    - PSNR · Denoised (dB) with improvement delta
+    - SSIM · Noisy
+    - SSIM · Denoised with improvement delta
+
+**Sample output at σ=50:**
+
+| Metric | Noisy | Denoised | Improvement |
+|--------|-------|----------|-------------|
+| PSNR (dB) | 15.25 | 20.53 | +5.28 |
+| SSIM | 0.4758 | 0.7130 | +0.2372 |
+
+The interface demonstrates the model's ability to recover image structure from severe noise, with clear quantitative evidence shown to the user.
 
 ### 8.3 Screenshots
-*(UI screenshots)*
 
----
+The interface has been tested end-to-end with:
+
+- All three sample images
+- Uploaded images
+- All three noise levels (σ=15, 25, 50)
+
+Streamlit renders the app instantly in the browser, and the U-Net inference runs on CPU in under a second per image. The app caches the model with `@st.cache_resource` so subsequent inferences are fast.
+
+**Technology stack:**
+
+- Streamlit 1.49 for the web UI
+- PyTorch for model inference
+- OpenCV + PIL for image I/O
+- scikit-image for PSNR/SSIM metrics
+
+
 
 ## 9. Conclusion
 
