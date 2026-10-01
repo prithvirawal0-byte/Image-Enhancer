@@ -64,7 +64,7 @@ def unet_denoise(model, noisy, device):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--clean_dir", type=str, default="data/clean")
-    parser.add_argument("--model_path", type=str, default="models/autoencoder.pth")
+    parser.add_argument("--model_path", type=str, default="models/autoencoder_ssim.pth")
     parser.add_argument("--sigma", type=float, default=25)
     parser.add_argument("--image_size", type=int, default=256)
     parser.add_argument("--output", type=str,

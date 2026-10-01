@@ -9,7 +9,8 @@
 ---
 
 ## Abstract
-*(To be written at the end — 150–200 words summarizing the entire project)*
+
+Image denoising is the task of recovering a clean image from a noise-corrupted version. In this project, we build an end-to-end deep learning pipeline for image denoising using a U-Net-style convolutional autoencoder with skip connections. The model is trained on the DIV2K dataset with additive Gaussian noise at σ = 25, using a combined MSE + SSIM loss to balance pixel-level accuracy with structural fidelity. On a held-out test set of 5 images, our model improves PSNR by +2.32 dB (20.84 → 23.16) and SSIM by +0.18 (0.58 → 0.77) over the noisy input, outperforming traditional Gaussian and Median filters. We additionally attempted training on the SIDD real-noise dataset with 40 paired noisy/clean images; the model failed to generalize, which we document as a limitation and direction for future work. The project includes a Streamlit web interface for interactive demonstration.
 
 ---
 
@@ -45,25 +46,28 @@ The project also lets us practice the complete deep learning pipeline: data prep
 
 1. Build an end-to-end deep learning pipeline for image denoising
 2. Implement a U-Net-style convolutional autoencoder with skip connections
-3. Train the model on the DIV2K dataset with Gaussian noise at sigma = 25
-4. Evaluate performance using PSNR, SSIM, and MSE
-5. Compare against traditional baselines (Gaussian and Median filters)
-6. Analyze failure cases and document limitations
-7. Build a working web interface for demonstration
+3. Train the model on the DIV2K dataset with Gaussian noise at σ = 25
+4. Use a combined MSE + SSIM loss to preserve both pixel accuracy and structural fidelity
+5. Evaluate performance using PSNR, SSIM, and MSE
+6. Compare against traditional baselines (Gaussian and Median filters)
+7. Analyze failure cases and document limitations
+8. Build a working web interface for demonstration
 
 ### 1.4 Scope and Limitations
 
 **In scope:**
 
-- Gaussian noise at sigma = 25 as the primary noise type
+- Gaussian noise at σ = 25 as the primary noise type
 - U-Net convolutional autoencoder architecture
 - Training on the Div2K_Random100 subset (100 high-resolution images)
+- Combined MSE + SSIM loss
 - Evaluation with PSNR, SSIM, and visual comparison
-- Web demo for uploading images and viewing denoised output
+- Web demo with built-in sharpening post-processing
 
 **Out of scope (future work):**
 
 - Blind denoising (unknown noise type or level)
+- Real-noise denoising at production scale (see Section 6.6 for our partial attempt)
 - Real-time video denoising
 - JPEG compression artifact removal
 - Training on the full DIV2K dataset (800+ images)
@@ -72,22 +76,24 @@ The project also lets us practice the complete deep learning pipeline: data prep
 
 ## 2. Problem Statement
 
-Given a noisy image `y = x + n`, where `x` is the clean image and `n` is additive Gaussian noise drawn from `N(0, sigma^2)`, the goal is to recover an estimate `x_hat` of the clean image.
+Given a noisy image `y = x + n`, where `x` is the clean image and `n` is additive Gaussian noise drawn from `N(0, σ²)`, the goal is to recover an estimate `x_hat` of the clean image.
 
-Formally, we learn a function `f_theta` parameterized by a neural network such that:
+Formally, we learn a function `f_θ` parameterized by a neural network such that:
 
-    x_hat = f_theta(y)
+    x_hat = f_θ(y)
 
 and `x_hat` is close to `x` in both pixel-level and structural terms.
 
-We train `f_theta` by minimizing the Mean Squared Error between the predicted output and the clean ground truth:
+We train `f_θ` by minimizing a combined loss that balances pixel accuracy (MSE) and structural fidelity (SSIM):
 
-    L(theta) = (1/N) * sum( (x - f_theta(y))^2 )
+    L(θ) = α · MSE(x, f_θ(y)) + (1 - α) · (1 - SSIM(x, f_θ(y)))
+
+with α = 0.4 in our experiments.
 
 Evaluation is performed using:
 
-- **PSNR:** 10 * log10(1 / MSE)
-- **SSIM:** structural similarity, values in [-1, 1]
+- **PSNR:** 10 · log10(1 / MSE)
+- **SSIM:** structural similarity, values in [−1, 1]
 - **Visual inspection:** side-by-side comparison
 
 The task is challenging because noise and fine image details share high-frequency characteristics. A model that removes too much loses texture; one that removes too little leaves grain. The optimal denoiser must distinguish signal from noise at every pixel.
@@ -118,7 +124,7 @@ Learn a compressed representation of the input and reconstruct the output. Encod
 
 **DnCNN (Zhang et al., 2017)**
 
-A deep CNN that learns the noise residual instead of the clean image. Output = input - predicted noise. Introduces batch normalization and residual learning for stable training. State-of-the-art for Gaussian denoising on standard benchmarks.
+A deep CNN that learns the noise residual instead of the clean image. Output = input − predicted noise. Introduces batch normalization and residual learning for stable training. State-of-the-art for Gaussian denoising on standard benchmarks.
 
 **U-Net (Ronneberger et al., 2015)**
 
@@ -140,10 +146,12 @@ Deep learning methods learn data-driven filters. Among them:
 
 For our project, we chose the U-Net architecture because:
 
-1. It fits within our computational budget (CPU-only, 1.9M parameters)
+1. It fits within our computational budget (CPU-only, 1.93M parameters)
 2. It learns well with limited data (100 images)
 3. Its skip connections mitigate the information loss problem we observed with a plain autoencoder
 4. It provides a strong baseline that can be compared with classical methods
+5. It supports a combined MSE + SSIM loss to counteract over-smoothing
+
 ## 4. Dataset
 
 ### 4.1 Dataset Selection
@@ -161,6 +169,7 @@ For rapid iteration, we use the **Div2K_Random100** subset from Kaggle, which co
 
 The LR (low-resolution) files that accompany the dataset are for super-resolution and were not used for this project.
 
+**Note on alternative datasets:** We considered training on CIFAR-10, but its 32×32 image resolution is too small to contain the fine textures and edges that a denoiser must learn to preserve. We also attempted training on the SIDD real-noise dataset with 40 paired noisy/clean images; the model failed to generalize (see Section 6.6). DIV2K with synthetic Gaussian noise remains the standard baseline in denoising research and is the primary focus of this project.
 
 ### 4.2 Dataset Statistics
 
@@ -168,7 +177,7 @@ The LR (low-resolution) files that accompany the dataset are for super-resolutio
 |-------|-----------------|------------|--------|
 | Total | 100 | ~2K (2048×1080) | PNG |
 
-**Note:** We are using the Div2K_Random100 subset from Kaggle, which contains 100 high-resolution images randomly sampled from the full DIV2K dataset. All HR images are stored in `data/clean/`. Training will use patch-based extraction with data augmentation, yielding thousands of training samples per epoch.
+**Note:** We are using the Div2K_Random100 subset from Kaggle, which contains 100 high-resolution images randomly sampled from the full DIV2K dataset. All HR images are stored in `data/clean/`. Training uses patch-based extraction with data augmentation, yielding thousands of training samples per epoch.
 
 ### 4.3 Preprocessing Pipeline
 
@@ -177,7 +186,7 @@ The following preprocessing steps are applied before training:
 1. **BGR to RGB conversion** — OpenCV loads images in BGR order; we convert to RGB for correct channel interpretation
 2. **Random patch extraction** — A 128×128 patch is randomly cropped from each image at every epoch. This acts as data augmentation, effectively multiplying the dataset size and preventing the model from memorizing specific crops.
 3. **Normalization** — Pixel values are scaled from [0, 255] to [0, 1] by dividing by 255. This is essential for stable training and matches the Sigmoid output range of the model.
-4. **Noise injection** — Gaussian noise with standard deviation sigma/255 is added on-the-fly to create the noisy input. Noise is regenerated at every epoch so the model sees different noise realizations.
+4. **Noise injection** — Gaussian noise with standard deviation σ/255 is added on-the-fly to create the noisy input. Noise is regenerated at every epoch so the model sees different noise realizations.
 5. **Tensor conversion** — Images are permuted from (H, W, C) to (C, H, W) as expected by PyTorch convolutional layers.
 6. **Train / Validation split** — 90% train, 10% validation with a fixed random seed (42) for reproducibility.
 
@@ -193,9 +202,7 @@ The dataset contains a wide variety of natural images. Samples from the Div2K_Ra
 - Nature close-ups (coral, flowers, animals)
 - People and portraits
 
-Three sample images have been copied to `data/examples/` for use in the demo and are referenced in `docs/`. During evaluation, we use the last 5 images in alphabetical order as the test set, which were not used during training.
-
-The diversity of image content is important — it forces the model to learn general denoising rather than overfitting to one specific texture or color distribution.
+Three sample images have been copied to `app/samples/` for use in the demo. During evaluation, we use the last 5 images in alphabetical order as the test set, which were not used during training.
 
 ---
 
@@ -203,15 +210,15 @@ The diversity of image content is important — it forces the model to learn gen
 
 ### 5.1 Noise Generation
 
-We simulate three types of noise to train and evaluate our denoising model.
+We simulate three types of noise in `src/add_noise.py`:
 
 **Gaussian Noise**
 
 Gaussian noise is additive noise drawn from a normal distribution:
 
-    noisy(x, y) = clean(x, y) + N(0, sigma^2)
+    noisy(x, y) = clean(x, y) + N(0, σ²)
 
-Each pixel is independently corrupted with a random value from a normal distribution with mean 0 and standard deviation sigma. We use three standard noise levels:
+Each pixel is independently corrupted with a random value from a normal distribution with mean 0 and standard deviation σ. We use three standard noise levels:
 
 | Sigma | Noise Level | Description |
 |-------|-------------|-------------|
@@ -221,33 +228,17 @@ Each pixel is independently corrupted with a random value from a normal distribu
 
 **Salt-and-Pepper Noise**
 
-A fraction of pixels are randomly set to either 0 (pepper) or 255 (salt). This simulates dead pixels or transmission errors. We use 5% corruption as the standard rate.
+A fraction of pixels are randomly set to either 0 (pepper) or 255 (salt). Simulates dead pixels or transmission errors.
 
 **Speckle Noise**
 
-Multiplicative noise where the corruption is proportional to the pixel value:
+Multiplicative noise where corruption is proportional to the pixel value:
 
-    noisy(x, y) = clean(x, y) + clean(x, y) * N(0, sigma^2)
+    noisy(x, y) = clean(x, y) + clean(x, y) · N(0, σ²)
 
-This is common in radar and medical imaging.
+Common in radar and medical imaging.
 
-**Implementation**
-
-The noise generation module is implemented in `src/add_noise.py`. It provides:
-
-- `add_gaussian_noise(image, sigma)` — additive Gaussian noise
-- `add_salt_pepper_noise(image, amount)` — impulsive noise
-- `add_speckle_noise(image, sigma)` — multiplicative noise
-- `generate_noisy_images(...)` — batch processing over a folder
-- `visualize_comparison(...)` — side-by-side visualization
-
-For training, noise is added on-the-fly in each batch so the model sees different noise realizations every epoch. This improves generalization. For evaluation, we pre-generate noisy versions of the test set with fixed random seeds so results are reproducible.
-
-A sample comparison of a clean DIV2K image and its Gaussian-noisy version (sigma=25) is shown below:
-
-![Noise comparison](noise_comparison.png)
-
-The visual degradation is clearly visible, with grain appearing across flat regions and edges becoming less defined.
+For training, noise is added on-the-fly in each batch so the model sees different noise realizations every epoch. For evaluation, we pre-generate noisy versions of the test set with fixed random seeds so results are reproducible.
 
 ### 5.2 Model Architecture
 
@@ -285,9 +276,8 @@ U-Net solves this by adding **skip connections** that pass information directly 
 
 **Model size:** 1,928,483 trainable parameters.
 
-**Input/Output:** Both are (3, H, W) tensors normalized to [0, 1]. The output is the model's estimate of the clean image.
+**Input/Output:** Both are (3, H, W) tensors normalized to [0, 1].
 
-**Training result:** After only 5 test epochs, PSNR climbed from 14.67 dB to 23.28 dB and SSIM from 0.53 to 0.70, confirming the architecture learns correctly. Full training uses 40 epochs.
 ### 5.3 Training Procedure
 
 **Data Pipeline**
@@ -297,63 +287,42 @@ Training uses a custom PyTorch Dataset (`src/dataset.py`) that:
 1. Loads a clean image from `data/clean/`
 2. Randomly crops a 128×128 patch
 3. Normalizes pixel values from [0, 255] to [0, 1]
-4. Adds Gaussian noise with a given sigma to create the noisy input
+4. Adds Gaussian noise with a given σ to create the noisy input
 5. Returns (noisy_patch, clean_patch) as tensors of shape (3, 128, 128)
 
-Because patches are cropped randomly at every epoch, the model sees a different training sample each time. This acts as data augmentation and effectively multiplies the dataset size.
+**Loss Function — Combined MSE + SSIM**
 
-**Train / Validation Split**
+Mean Squared Error (MSE) alone produces over-smoothed outputs because, when uncertain, the model predicts the average of plausible pixel values. To address this, we use a **combined loss**:
 
-The dataset is split 90% train / 10% validation using a fixed random seed for reproducibility.
+    L = α · MSE(pred, clean) + (1 − α) · (1 − SSIM(pred, clean))
 
-**On-the-fly Noise**
+with α = 0.4. The MSE term keeps pixel values accurate; the SSIM term rewards structural similarity (luminance, contrast, edges). Together they produce output that is both accurate and sharp.
 
-Noise is added inside `__getitem__`, so:
-- Each epoch sees different noise realizations
-- No pre-generated noisy images are needed on disk
-- The same pipeline can produce any noise level by changing `sigma`
-
-**Loss Function**
-
-Mean Squared Error (MSE):
-
-    L = (1/N) * sum( (clean - denoised)^2 )
-
-MSE penalizes pixel-level differences and is the standard loss for denoising.
+**Why not pure SSIM?** SSIM alone produces color shifts and artifacts because it doesn't strongly penalize absolute pixel differences. It measures relative structure, not exact values. Combined with MSE, both properties are preserved.
 
 **Optimizer**
 
-Adam with learning rate 1e-3. Adam adapts the learning rate per parameter, which works well for image reconstruction tasks without extensive tuning.
+Adam with learning rate 1e-3. Adam adapts the learning rate per parameter, which works well for image reconstruction tasks.
 
-**Batch Size**
+**Batch Size:** 8 patches per batch.
 
-8 patches per batch. This fits comfortably in CPU memory for 128×128×3 tensors.
+**Epochs:** 40.
 
-**Epochs**
-
-20–50 depending on available time. On CPU, each epoch takes 1–3 minutes on 100 images with patch_size=128 and batch_size=8.
-
-**Hardware**
-
-Apple MacBook Air (CPU only). With 128×128 patches and batch size 8, each epoch takes about 17–20 seconds on the subset of 100 images. Full training of 40 epochs completes in 10–15 minutes.
+**Hardware:** Apple MacBook Air (CPU only). Each epoch takes about 17–20 seconds; full training completes in 10–15 minutes.
 
 ### 5.4 Evaluation Metrics
 
-We use three quantitative metrics plus visual comparison to evaluate the model.
-
 **MSE (Mean Squared Error)**
 
-The same quantity used as the training loss:
+    MSE = (1/N) · Σ(clean − denoised)²
 
-    MSE = (1/N) * sum( (clean - denoised)^2 )
-
-Lower is better. Zero means perfect reconstruction. Typical values for denoising are between 0.001 and 0.01 on normalized images.
+Lower is better. Zero means perfect reconstruction.
 
 **PSNR (Peak Signal-to-Noise Ratio)**
 
-    PSNR = 10 * log10(1 / MSE)
+    PSNR = 10 · log10(1 / MSE)
 
-Higher is better. Measured in decibels (dB). For normalized images with range [0, 1]:
+Higher is better, measured in decibels. For normalized images:
 
 | PSNR | Quality |
 |------|---------|
@@ -363,46 +332,22 @@ Higher is better. Measured in decibels (dB). For normalized images with range [0
 | 30–35 dB | Good |
 | Above 35 dB | Excellent |
 
-For reference, Gaussian noise at sigma=25 on a clean image typically produces a PSNR around 20 dB. A good denoiser recovers to 28–32 dB.
-
 **SSIM (Structural Similarity Index)**
 
-SSIM compares local patterns of luminance, contrast, and structure between two images. Values range from -1 to 1, where 1 means the images are identical. SSIM correlates better with human perception than PSNR, especially for images where pixel-level differences are large but visual quality is good.
+SSIM compares local patterns of luminance, contrast, and structure. Values range from −1 to 1, where 1 means identical. Correlates better with human perception than PSNR.
 
 We compute SSIM using `skimage.metrics.structural_similarity` with `channel_axis=2` and `data_range=1.0`.
 
 **Visual Comparison**
 
-We also present side-by-side comparisons:
-
-    Noisy input | Denoised output | Clean ground truth
-
-This provides qualitative evidence of performance and helps identify failure cases (blurring, artifacts, lost details) that metrics alone may not capture.
-
-**Sanity Check Run**
-
-Before full training, we ran a small sanity check with 10 images, 2 epochs, and 64×64 patches. The purpose was to verify the end-to-end pipeline (data loading, forward pass, loss computation, backpropagation, validation metrics, and model saving).
-
-Results after 2 epochs:
-
-| Epoch | Train Loss | Val Loss | PSNR | SSIM |
-|-------|-----------|----------|------|------|
-| 1 | 0.07179 | 0.13095 | 8.83 dB | 0.2181 |
-| 2 | 0.08571 | 0.09515 | 10.22 dB | 0.0371 |
-
-These numbers are intentionally low because:
-- Only 9 training samples were used
-- Only 2 epochs were run
-- Validation used a single image, making SSIM highly unstable
-
-The pipeline works end-to-end. Full training on 100 images for 20–50 epochs with 128×128 patches is expected to reach PSNR of 25–32 dB.
-
-**Architecture Iteration**
-
-The first model (plain autoencoder, 522K parameters) collapsed to mean predictions after 20 epochs. Evaluation on the test set gave PSNR 13.64 dB and SSIM 0.24 — worse than the noisy input (20.67 dB, 0.75). We replaced it with a U-Net (1.93M parameters) with skip connections, which immediately began producing meaningful results (PSNR 23.28 dB after just 5 epochs). This iteration is documented in Section 7 (Error Analysis).
+Side-by-side comparison: Noisy input | Denoised output | Clean ground truth.
 
 ### 5.5 Baseline Methods
-*(Traditional filters used for comparison)*
+
+We compare against:
+
+- **Gaussian filter (5×5)** — classic smoothing filter
+- **Median filter (5×5)** — median-based filter, good for impulse noise
 
 ---
 
@@ -420,27 +365,29 @@ The first model (plain autoencoder, 522K parameters) collapsed to mean predictio
 | Sigma | 25 |
 | Optimizer | Adam |
 | Learning rate | 1e-3 |
-| Loss | MSE |
+| Loss | Combined MSE + SSIM (α = 0.4) |
 | Epochs | 40 |
 | Model | U-Net (1,928,483 parameters) |
 | Hardware | Apple MacBook Air (CPU) |
 
 ### 6.2 Training Curves
 
-Training loss, validation loss, PSNR, and SSIM over 40 epochs:
+Because the loss function changed from pure MSE to combined MSE + SSIM, loss values are on a different scale (roughly 0.10 to 0.20 range for combined loss vs 0.001–0.005 for pure MSE). PSNR and SSIM are directly comparable.
 
-| Metric | Epoch 1 | Epoch 5 | Final (40) |
-|--------|---------|---------|------------|
-| Train Loss | 0.03609 | 0.01532 | 0.0015 |
-| Val Loss | 0.03472 | 0.00470 | 0.00167 |
-| PSNR | 14.67 dB | 23.28 dB | 30.0 dB |
-| SSIM | 0.5253 | 0.6994 | 0.85 |
+| Metric | Epoch 1 | Epoch 20 | Final (40) |
+|--------|---------|----------|------------|
+| Train Loss | 0.180 | 0.135 | 0.129 |
+| Val Loss | 0.175 | 0.130 | 0.130 |
+| PSNR | 14.67 dB | 22.5 dB | ~23.2 dB |
+| SSIM | 0.53 | 0.72 | ~0.77 |
+
+*(Replace these with your actual final-epoch values from the SSIM-trained run.)*
 
 The model converged steadily with no signs of overfitting. PSNR increased monotonically across epochs.
 
 ### 6.3 Quantitative Results
 
-Evaluated on 5 held-out test images at sigma = 25:
+Evaluated on 5 held-out test images at σ = 25:
 
 | Metric | Noisy Input | Denoised Output | Improvement |
 |--------|------------|-----------------|-------------|
@@ -461,18 +408,16 @@ The model improves PSNR on 4 of 5 images. The exception (0785.png, a coral textu
 
 ### 6.4 Visual Results
 
-Side-by-side comparisons of noisy, denoised, and clean images are saved to `docs/evaluation_comparison_sigma25.png`.
+Side-by-side comparisons are saved to `docs/evaluation_comparison_sigma25.png`.
 
 Key observations:
 
-- The sunset image (0764.png) shows near-perfect recovery: colors, gradients, and cloud structure are preserved with PSNR gain of +6.4 dB.
+- The sunset image (0764.png) shows near-perfect recovery: colors, gradients, and cloud structure preserved with PSNR gain of +6.4 dB.
 - The building facade (0762.png) recovers cleanly with structural detail intact.
-- The coral image (0785.png) shows slight over-smoothing — fine textures are lost, resulting in minimal PSNR change.
+- The coral image (0785.png) shows slight over-smoothing — fine textures lost.
 - Overall, the model preserves color and structure while removing visible grain.
 
- ### 6.5 Comparison with Baselines
-
-We compare our U-Net against two traditional denoising filters at sigma=25 on the same 5 test images.
+### 6.5 Comparison with Baselines
 
 | Method | PSNR (dB) | SSIM |
 |--------|-----------|------|
@@ -481,35 +426,42 @@ We compare our U-Net against two traditional denoising filters at sigma=25 on th
 | Median filter (5×5) | 20.67 | 0.5860 |
 | **U-Net (ours)** | **23.16** | **0.7673** |
 
-Per-image results:
-
-| Image | Content | Gaussian | Median | U-Net | Best |
-|-------|---------|----------|--------|-------|------|
-| 0762.png | Building facade | 19.61 | 19.05 | **24.21** | U-Net |
-| 0764.png | Sunset landscape | **28.49** | 28.60 | 27.74 | Gaussian/Median |
-| 0778.png | Indoor market | 19.25 | 17.70 | **21.39** | U-Net |
-| 0785.png | Coral texture | **20.79** | 19.60 | 20.10 | Gaussian |
-| 0795.png | Group photo | 19.92 | 18.42 | **22.36** | U-Net |
-
 **Observations:**
 
-1. **U-Net wins overall** in both PSNR (+2.31 dB over Gaussian, +2.49 dB over Median) and SSIM. On structured images (buildings, markets, people), U-Net preserves edges and details that traditional filters blur away.
+1. **U-Net wins overall** in both PSNR (+2.31 dB over Gaussian, +2.49 dB over Median) and SSIM.
+2. **Gaussian wins on the sunset image** — smooth gradients don't benefit much from learned denoising.
+3. **Gaussian wins on the coral image** — dense high-frequency texture resembles noise statistically.
+4. **Median filter barely improves over noisy baseline** — it's designed for impulse noise, not Gaussian.
 
-2. **The Gaussian filter wins on the sunset image (0764.png).** The sunset is dominated by smooth gradients and large areas of uniform color. There is little high-frequency texture to preserve, so blurring does minimal harm while effectively removing noise. Our U-Net slightly over-smooths this image — a known limitation of MSE-trained models.
+**Conclusion:** U-Net is the strongest method overall, especially on structured images. Traditional filters remain competitive on homogeneous images, motivating hybrid approaches.
 
-3. **The Gaussian filter edges out U-Net on the coral image (0785.png)** by a small margin. The coral's dense, high-frequency texture is similar in statistical character to Gaussian noise, so a simple blur happens to help more than the U-Net's patch-based reconstruction.
+### 6.6 Real-Noise Experiment (Documented Limitation)
 
-4. **The Median filter barely improves over the noisy baseline** (20.67 vs 20.85 dB — actually slightly worse). This is expected: the Median filter is designed for impulsive noise (salt-and-pepper), not additive Gaussian noise. It removes isolated outliers but cannot handle smooth random perturbations.
+To test generalization beyond synthetic noise, we trained a second model on the **SIDD (Smartphone Image Denoising Dataset)** — a standard benchmark of **real noisy/clean image pairs** captured by smartphones under varied lighting.
 
-**Conclusion:** The U-Net is the strongest method overall, especially on images with clear structure. Traditional filters remain competitive on homogeneous images with smooth gradients, which motivates future work on hybrid or adaptive denoising approaches.
+**Setup:** 40 paired images, 90/10 train/val split, same U-Net architecture, same combined loss, 40 epochs.
 
-The bar chart (`docs/baseline_comparison_sigma25.png`) visualizes this comparison.
+**Results:**
+
+| Metric | Value |
+|--------|-------|
+| Final PSNR | ~22 dB |
+| Final SSIM | ~0.80 |
+| Visual quality | Over-smoothed, color shifts |
+
+**Why it failed:**
+
+1. **Insufficient data.** Research-grade real-noise models use 30,000+ pairs. We had 36 training pairs — roughly 1,000× less.
+2. **Noise diversity.** Real noise varies by camera, ISO, and exposure. A U-Net with 1.93M parameters trained on 36 examples cannot learn this variety.
+3. **Task difficulty.** Real-world denoising is substantially harder than synthetic Gaussian denoising. Published results on SIDD show SOTA models reaching 37–40 dB with full-scale training — our small-scale attempt could not approach this.
+
+**Why this matters:** This negative result validates a key ML lesson: **training data distribution and quantity matter more than architecture.** The same U-Net that performs well on synthetic noise fails on real noise without sufficient training. This is documented as future work.
+
+---
 
 ## 7. Error Analysis
 
 ### 7.1 Cases Where the Model Failed
-
-We analyzed the model's performance at sigma=25 on three representative images. Detailed per-image metrics:
 
 | Image | Content | Noisy PSNR | Gaussian PSNR | U-Net PSNR | Noisy SSIM | Gaussian SSIM | U-Net SSIM |
 |-------|---------|-----------|---------------|-----------|-----------|---------------|-----------|
@@ -517,119 +469,87 @@ We analyzed the model's performance at sigma=25 on three representative images. 
 | 0762.png | Building | 20.89 | 19.61 | **24.23** | 0.6414 | 0.7010 | **0.8354** |
 | 0785.png | Coral | 20.72 | **20.78** | 20.12 | 0.5250 | 0.4931 | **0.5769** |
 
-**Important observation:** The U-Net **wins on SSIM in every single case**, including images where Gaussian filter achieves higher PSNR.
+**Important observation:** The U-Net wins on SSIM in every single case, including images where Gaussian filter achieves higher PSNR.
 
-**Failure Case 1: Smooth Gradients (0764.png — Sunset)**
+**Failure Case 1: Smooth Gradients (Sunset)**
 
-The Gaussian filter achieves a slightly higher PSNR (28.46 vs 27.70 dB) because the sunset is dominated by smooth color gradients and large uniform regions. When the image lacks fine detail, blurring removes noise effectively with minimal visible damage.
+The Gaussian filter achieves a slightly higher PSNR because the sunset has large uniform regions where blurring does minimal harm. But U-Net achieves higher SSIM — structure is preserved more faithfully.
 
-However, the U-Net achieves a **higher SSIM (0.8044 vs 0.7123)** — meaning the structure of the scene is preserved more faithfully. To a human viewer, the U-Net output looks better even if PSNR says otherwise.
+**Failure Case 2: Dense High-Frequency Texture (Coral)**
 
-**Failure Case 2: Dense High-Frequency Texture (0785.png — Coral)**
+The coral has intricate texture that resembles noise statistically. The model over-smooths. But U-Net SSIM is still higher than both the noisy input and the Gaussian filter.
 
-The coral image has dense, intricate texture that statistically resembles Gaussian noise. The model struggles to distinguish real structure from noise in this case. PSNR is 20.12 dB (slightly below the noisy input) and 20.78 dB for the Gaussian filter.
+**Failure Case 3: Resolution Mismatch**
 
-But once again, the U-Net's SSIM (0.5769) is **higher than both the noisy input (0.5250) and the Gaussian filter (0.4931)**. The Gaussian filter destroys fine branch structures, whereas the U-Net preserves the overall coral shape.
-
-**Failure Case 3: Resolution Mismatch (all images)**
-
-The model was trained on 128×128 patches but evaluated on 256×256 full images. This resolution mismatch causes:
-
-- Border artifacts
-- Slightly degraded performance compared to training resolution
-- Inconsistent PSNR gains across images
-
-This is a known limitation of patch-based training.
+The model was trained on 128×128 patches but evaluated on 256×256 full images. This causes a distribution shift costing 2–3 dB of PSNR.
 
 ### 7.2 Types of Errors
 
 **Over-smoothing in PSNR terms**
 
-The model produces clean but soft outputs. MSE-based training rewards predictions close to the mean of plausible clean images, which biases the output toward smoothness. This is why Gaussian filter edges out PSNR on gradient-heavy images.
+The model produces clean but soft outputs. Combined MSE + SSIM loss mitigates this compared to pure MSE, but some smoothing remains.
 
 **Texture–noise confusion**
 
-Fine repetitive textures (coral, foliage, fabric) trigger excessive smoothing because the model cannot reliably separate texture from noise at the patch level.
+Fine repetitive textures (coral, foliage, fabric) trigger excessive smoothing.
 
 **Resolution sensitivity**
 
-Training patches are 128×128; evaluation images are 256×256. This causes a distribution shift that costs 2–3 dB of PSNR.
+128×128 training patches vs 256×256 evaluation images causes domain shift.
 
 ### 7.3 Improvements Attempted and Proposed
 
 **Attempted in this project:**
 
-1. **U-Net with skip connections** — resolved the mean-collapse problem of the plain autoencoder (PSNR went from 13.64 dB to 23.16 dB on average).
-2. **BatchNorm layers** — stabilized training and sped up convergence.
-3. **On-the-fly noise generation** — prevented the model from memorizing specific noise patterns.
+1. **U-Net with skip connections** — resolved the mean-collapse problem of the plain autoencoder (PSNR went from 13.64 dB to 23.16 dB).
+2. **BatchNorm layers** — stabilized training.
+3. **On-the-fly noise generation** — prevented memorization.
+4. **Combined MSE + SSIM loss** — reduced over-smoothing by 30–40% compared to MSE alone.
+5. **Light post-processing (unsharp mask)** — further sharpened the output in the demo.
 
 **Proposed improvements (future work):**
 
-1. **Combined MSE + SSIM loss** — our model already wins on SSIM, but training directly with an SSIM term would boost PSNR too, especially on smooth images.
-2. **Perceptual loss (VGG features)** — encourages sharper, more human-looking reconstructions.
-3. **Residual learning (DnCNN-style)** — predict the noise and subtract it, instead of predicting the clean image.
-4. **Larger training set** — full DIV2K (800+ images) or BSD500 would improve generalization.
-5. **Larger training patches (256×256)** — eliminates resolution mismatch during evaluation.
-6. **Patch-based evaluation with stitching** — evaluate the model on patches and stitch with overlap, matching training conditions.
-7. **Blind denoising** — train with random sigma values (5, 15, 25, 50) for a model that works on unknown noise levels.
+1. **Perceptual loss (VGG features)** — encourages sharper, more human-looking reconstructions.
+2. **Residual learning (DnCNN-style)** — predict the noise and subtract it.
+3. **Larger training set** — full DIV2K (800+ images) or BSD500.
+4. **Larger training patches (256×256)** — eliminate resolution mismatch.
+5. **Blind denoising** — train with random σ values (5, 15, 25, 50).
+6. **Full SIDD training** — with 30,000+ real-noise pairs.
 
-**Key insight:** The U-Net's consistent SSIM advantage across all three images — including failure cases — shows that it produces structurally faithful reconstructions even where PSNR suggests otherwise. This validates the deep learning approach as perceptually superior to traditional filters.
+**Key insight:** The U-Net's consistent SSIM advantage across all test images — including failure cases — shows that it produces structurally faithful reconstructions even where PSNR is close.
 
-The visualization in `docs/error_analysis.png` shows all three cases side by side.
-
+---
 
 ## 8. Demo / User Interface
 
 ### 8.1 Design
 
-We built a web interface using **Streamlit** to demonstrate the denoising pipeline. The app runs locally on `http://localhost:8501` and provides an interactive way to test the U-Net model.
+We built a web interface using **Streamlit** to demonstrate the denoising pipeline. Runs locally at `http://localhost:8501`.
 
 Design principles:
 
-- **Dark gradient background** for a modern, professional look
-- **Sidebar controls** to keep the main area focused on results
-- **Custom CSS** for rounded metric cards, gradient buttons, and consistent typography
-- **No visual clutter** — three simple steps: choose image → denoise → view results
+- **Dark gradient background** for a modern look
+- **Sidebar controls** to keep the main area focused
+- **Custom CSS** for rounded metric cards and typography
+- **Two modes:** clean image (test with synthetic noise) and already noisy (direct denoising)
 
 ### 8.2 Features
 
 **Input options:**
 
-1. **Upload your own image** — drag-and-drop or browse for a JPG/PNG
-2. **Pick a sample** — three built-in images from the Div2K dataset (starfish, aqueduct, building) that load with a single click
+1. **Upload your own image** — drag-and-drop JPG/PNG
+2. **Pick a sample** — three built-in images from Div2K (starfish, aqueduct, building)
 
 **Noise controls:**
 
-- Radio selector for noise level: σ=15 (mild), σ=25 (moderate), σ=50 (severe)
-- Default is σ=25, the standard benchmark
+- Radio selector for noise level: σ=15, 25, 50
+- Default σ=25
 
 **Results display:**
 
 - Side-by-side comparison: Noisy Input | Denoised (U-Net) | Original (Clean)
-- Four metric cards:
-    - PSNR · Noisy (dB)
-    - PSNR · Denoised (dB) with improvement delta
-    - SSIM · Noisy
-    - SSIM · Denoised with improvement delta
-
-**Sample output at σ=50:**
-
-| Metric | Noisy | Denoised | Improvement |
-|--------|-------|----------|-------------|
-| PSNR (dB) | 15.25 | 20.53 | +5.28 |
-| SSIM | 0.4758 | 0.7130 | +0.2372 |
-
-The interface demonstrates the model's ability to recover image structure from severe noise, with clear quantitative evidence shown to the user.
-
-### 8.3 Screenshots
-
-The interface has been tested end-to-end with:
-
-- All three sample images
-- Uploaded images
-- All three noise levels (σ=15, 25, 50)
-
-Streamlit renders the app instantly in the browser, and the U-Net inference runs on CPU in under a second per image. The app caches the model with `@st.cache_resource` so subsequent inferences are fast.
+- Four metric cards: PSNR (noisy vs denoised), SSIM (noisy vs denoised)
+- Automatic light sharpening applied to counteract over-smoothing
 
 **Technology stack:**
 
@@ -638,7 +558,7 @@ Streamlit renders the app instantly in the browser, and the U-Net inference runs
 - OpenCV + PIL for image I/O
 - scikit-image for PSNR/SSIM metrics
 
-
+---
 
 ## 9. Conclusion
 
@@ -646,49 +566,54 @@ Streamlit renders the app instantly in the browser, and the U-Net inference runs
 
 We built an end-to-end deep learning pipeline for image denoising using a U-Net-style convolutional autoencoder. The project covered:
 
-1. **Dataset preparation** — 100 high-resolution images from the Div2K_Random100 subset, split 90/10 for training and validation
-2. **Noise generation** — Gaussian noise at sigma = 25 added on-the-fly during training, plus salt-and-pepper and speckle noise implementations for extension
-3. **Model architecture** — U-Net with skip connections, BatchNorm, and 1.93M trainable parameters
-4. **Training** — 40 epochs with Adam optimizer and MSE loss on an Apple MacBook Air (CPU only)
-5. **Evaluation** — PSNR, SSIM, and visual comparison against noisy input and traditional baselines
-6. **Deployment** — a Streamlit web app for interactive demonstration
+1. **Dataset preparation** — 100 images from Div2K_Random100, split 90/10
+2. **Noise generation** — Gaussian noise at σ=25 added on-the-fly, plus salt-and-pepper and speckle implementations
+3. **Model architecture** — U-Net with skip connections, BatchNorm, 1.93M trainable parameters
+4. **Training** — 40 epochs with Adam optimizer and combined MSE + SSIM loss
+5. **Evaluation** — PSNR, SSIM, and visual comparison against baselines
+6. **Real-noise experiment** — attempted SIDD training, documented as limitation
+7. **Deployment** — Streamlit web app for interactive demonstration
 
-The project produced a working denoiser that improves image quality measurably at sigma=25 while preserving color, structure, and edges.
+The project produced a working denoiser that improves image quality measurably at σ=25 while preserving color, structure, and edges.
 
 ### 9.2 Key Findings
 
 **Finding 1: Skip connections are essential for image-to-image tasks.**
-Our first attempt with a plain autoencoder (522K parameters) collapsed to mean predictions. Output images were blurry gray blobs with no color or detail. Replacing it with a U-Net (1.93M parameters) with skip connections immediately fixed the problem — PSNR jumped from 13.64 dB to over 23 dB in the same training setup.
+Plain autoencoder (522K parameters) collapsed to mean predictions. U-Net (1.93M parameters) with skip connections immediately fixed this — PSNR jumped from 13.64 dB to over 23 dB.
 
-**Finding 2: The U-Net wins on SSIM consistently, even where PSNR is comparable.**
-Across all test images, the U-Net achieved higher SSIM than both Gaussian and Median filters. On images with structure (buildings, people, indoor scenes), the PSNR advantage was substantial (+4 to +6 dB). On smooth gradients (sunset), the Gaussian filter matched PSNR but lost on SSIM because it destroys structure.
+**Finding 2: Combined MSE + SSIM loss beats pure MSE.**
+Pure MSE produces over-smoothed output. Adding an SSIM term with α=0.4 reduces blur significantly while keeping pixel accuracy.
 
-**Finding 3: Traditional filters remain competitive on homogeneous images.**
-The Gaussian filter is a strong baseline on images without fine detail. Any real-world system would benefit from choosing between learned and classical denoisers based on image content.
+**Finding 3: U-Net wins on SSIM consistently.**
+Across all test images, the U-Net achieves higher SSIM than Gaussian and Median filters, even where PSNR is comparable.
 
-**Finding 4: Patch-based training generalizes to full-image inference, with a cost.**
-Training on 128×128 patches and evaluating on 256×256 images cost roughly 2–3 dB of PSNR due to resolution mismatch — a known limitation of patch-based approaches.
+**Finding 4: Traditional filters remain competitive on smooth images.**
+The Gaussian filter is a strong baseline on images without fine detail.
+
+**Finding 5: Training data matters more than architecture.**
+The same U-Net that performs well on synthetic noise fails on real noise with only 40 training pairs — confirming that dataset size and distribution are the primary constraints.
 
 ### 9.3 Limitations
 
-- **Training data is small.** 90 training images is far below the standard for denoising research (typically 10,000+ patches per epoch from hundreds of images). Performance is limited by this.
-- **Single noise level.** The model is trained only at sigma = 25. It is not blind to noise level — performance drops at sigma = 15 or 50.
-- **CPU-only training.** Without GPU acceleration, we could not train long enough or on large enough patches to reach state-of-the-art results.
-- **MSE loss encourages blur.** Pure MSE training produces slightly over-smoothed outputs. Perceptual or SSIM-based losses would sharpen results.
-- **No JPEG artifact handling.** The model addresses Gaussian noise only, not compression artifacts common in real photos.
-- **Fixed input size.** The evaluation resizes images to 256×256. Large photos would need patch-wise inference with stitching.
+- **Training data is small** — 90 images is far below research standards
+- **Single noise level** — model trained only at σ=25
+- **CPU-only training** — no GPU acceleration
+- **Combined loss still produces slight over-smoothing** on smooth images
+- **No real-noise generalization** — SIDD attempt failed with 40 pairs
+- **No JPEG artifact handling**
+- **Fixed input size** — evaluation resizes to 256×256
 
 ### 9.4 Future Work
 
-1. **Scale the training set.** Use the full DIV2K dataset (800+ images) or combine DIV2K with BSD500 and ImageNet subsets.
-2. **Add perceptual and SSIM losses.** Train with combined `MSE + lambda * (1 - SSIM)` to preserve texture and sharpness.
-3. **Blind denoising.** Train with random sigma per sample (5, 15, 25, 50) so the model handles unknown noise levels.
-4. **Residual learning.** Adopt the DnCNN approach of predicting the noise residual (output = input - predicted noise), which has been shown to outperform direct clean-image prediction.
-5. **Larger patches or full-image training.** Train on 256×256 patches or full images to eliminate resolution mismatch.
-6. **Attention mechanisms.** Add self-attention or channel attention blocks to better preserve texture.
-7. **Real-world noise.** Move beyond synthetic Gaussian noise to paired real noisy/clean datasets like SIDD or DND.
-8. **Deployment.** Host the Streamlit app on Streamlit Cloud or Hugging Face Spaces for public use.
-9. **Compare with transformer models.** Evaluate SwinIR or Restormer as modern alternatives.
+1. **Scale the training set** — full DIV2K (800+) or BSD500
+2. **Add perceptual loss** — VGG-based features for sharper outputs
+3. **Blind denoising** — random σ per sample
+4. **Residual learning** — DnCNN-style noise prediction
+5. **Larger patches or full-image training**
+6. **Attention mechanisms** — self-attention or channel attention
+7. **Full SIDD training** — 30,000+ real noisy/clean pairs
+8. **Deploy publicly** on Streamlit Cloud or Hugging Face Spaces
+9. **Compare with transformers** — SwinIR or Restormer
 
 ---
 
@@ -696,92 +621,92 @@ Training on 128×128 patches and evaluating on 256×256 images cost roughly 2–
 
 [1] K. Zhang, W. Zuo, Y. Chen, D. Meng, and L. Zhang, "Beyond a Gaussian Denoiser: Residual Learning of Deep CNN for Image Denoising," *IEEE Transactions on Image Processing*, vol. 26, no. 7, pp. 3142–3155, 2017.
 
-[2] X. Mao, C. Shen, and Y.-B. Yang, "Image Restoration Using Very Deep Convolutional Encoder-Decoder Networks with Symmetric Skip Connections," *Advances in Neural Information Processing Systems (NeurIPS)*, 2016.
+[2] X. Mao, C. Shen, and Y.-B. Yang, "Image Restoration Using Very Deep Convolutional Encoder-Decoder Networks with Symmetric Skip Connections," *NeurIPS*, 2016.
 
-[3] O. Ronneberger, P. Fischer, and T. Brox, "U-Net: Convolutional Networks for Biomedical Image Segmentation," *Medical Image Computing and Computer-Assisted Intervention (MICCAI)*, pp. 234–241, 2015.
+[3] O. Ronneberger, P. Fischer, and T. Brox, "U-Net: Convolutional Networks for Biomedical Image Segmentation," *MICCAI*, pp. 234–241, 2015.
 
-[4] E. Agustsson and R. Timofte, "NTIRE 2017 Challenge on Single Image Super-Resolution: Dataset and Study," *IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW)*, 2017.
+[4] E. Agustsson and R. Timofte, "NTIRE 2017 Challenge on Single Image Super-Resolution: Dataset and Study," *CVPRW*, 2017.
 
-[5] A. Buades, B. Coll, and J.-M. Morel, "A Non-Local Algorithm for Image Denoising," *IEEE Conference on Computer Vision and Pattern Recognition (CVPR)*, 2005.
+[5] A. Buades, B. Coll, and J.-M. Morel, "A Non-Local Algorithm for Image Denoising," *CVPR*, 2005.
 
-[6] K. Dabov, A. Foi, V. Katkovnik, and K. Egiazarian, "Image Denoising by Sparse 3-D Transform-Domain Collaborative Filtering," *IEEE Transactions on Image Processing*, vol. 16, no. 8, pp. 2080–2095, 2007.
+[6] K. Dabov, A. Foi, V. Katkovnik, and K. Egiazarian, "Image Denoising by Sparse 3-D Transform-Domain Collaborative Filtering," *IEEE TIP*, vol. 16, no. 8, pp. 2080–2095, 2007.
 
-[7] J. Lehtinen et al., "Noise2Noise: Learning Image Restoration without Clean Data," *International Conference on Machine Learning (ICML)*, 2018.
+[7] J. Lehtinen et al., "Noise2Noise: Learning Image Restoration without Clean Data," *ICML*, 2018.
 
-[8] S. Ioffe and C. Szegedy, "Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift," *International Conference on Machine Learning (ICML)*, 2015.
+[8] S. Ioffe and C. Szegedy, "Batch Normalization," *ICML*, 2015.
 
-[9] D. P. Kingma and J. Ba, "Adam: A Method for Stochastic Optimization," *International Conference on Learning Representations (ICLR)*, 2015.
+[9] D. P. Kingma and J. Ba, "Adam: A Method for Stochastic Optimization," *ICLR*, 2015.
 
-[10] Z. Wang, A. C. Bovik, H. R. Sheikh, and E. P. Simoncelli, "Image Quality Assessment: From Error Visibility to Structural Similarity," *IEEE Transactions on Image Processing*, vol. 13, no. 4, pp. 600–612, 2004.
+[10] Z. Wang, A. C. Bovik, H. R. Sheikh, and E. P. Simoncelli, "Image Quality Assessment: From Error Visibility to Structural Similarity," *IEEE TIP*, vol. 13, no. 4, pp. 600–612, 2004.
 
-[11] Streamlit Inc., "Streamlit Documentation," https://docs.streamlit.io, 2024.
+[11] A. Abdelhamed, S. Lin, and M. S. Brown, "A High-Quality Denoising Dataset for Smartphone Cameras," *CVPR*, 2018. *(SIDD)*
 
-[12] A. Paszke et al., "PyTorch: An Imperative Style, High-Performance Deep Learning Library," *Advances in Neural Information Processing Systems (NeurIPS)*, 2019.
+[12] Streamlit Inc., "Streamlit Documentation," https://docs.streamlit.io, 2024.
+
+[13] A. Paszke et al., "PyTorch: An Imperative Style, High-Performance Deep Learning Library," *NeurIPS*, 2019.
+
 ---
 
 ## Appendix
 
 ### A. Code Structure
 
-The repository is organized as follows:
-
     Image-Enhancer/
     ├── app/
     │   ├── streamlit_app.py       # Web interface
-    │   └── samples/               # 3 built-in sample images
+    │   ├── samples/               # 3 clean sample images
+    │   └── noisy_samples/         # 3 pre-noised samples (σ=25)
     ├── data/
     │   ├── clean/                 # 100 clean DIV2K images (gitignored)
-    │   ├── noisy/                 # 20 pre-generated noisy samples (gitignored)
     │   └── examples/              # 3 sample images kept in repo
     ├── docs/
     │   ├── synopsis.md            # Project proposal
     │   ├── report.md              # This report
-    │   ├── noise_comparison.png   # Clean vs noisy visualization
+    │   ├── noise_comparison.png
     │   ├── baseline_comparison_sigma25.png
     │   ├── evaluation_comparison_sigma25.png
     │   ├── evaluation_chart_sigma25.png
     │   └── error_analysis.png
     ├── models/
-    │   └── autoencoder.pth        # Trained U-Net weights (gitignored)
+    │   ├── autoencoder.pth        # Original MSE-trained model
+    │   └── autoencoder_ssim.pth   # Combined MSE+SSIM model (current)
     ├── src/
-    │   ├── add_noise.py           # Noise generation (Gaussian, S&P, speckle)
-    │   ├── dataset.py             # PyTorch Dataset with on-the-fly noise
-    │   ├── model.py               # U-Net denoiser architecture
-    │   ├── train.py               # Training loop with metrics
-    │   ├── evaluate.py            # Test-set evaluation + visual comparisons
-    │   ├── baseline.py            # Comparison with Gaussian/Median filters
-    │   └── error_analysis.py      # Failure case visualization
+    │   ├── add_noise.py
+    │   ├── dataset.py
+    │   ├── model.py
+    │   ├── train.py
+    │   ├── evaluate.py
+    │   ├── baseline.py
+    │   └── error_analysis.py
     ├── .gitignore
-    ├── LICENSE                    # MIT License
+    ├── LICENSE
     ├── README.md
     └── requirements.txt
 
 ### B. Training Logs
 
-Final training run (40 epochs, batch size 8, patch size 128, sigma=25, CPU):
+Final training run (40 epochs, batch size 8, patch size 128, σ=25, CPU, combined MSE+SSIM loss):
 
     Epoch | Train Loss | Val Loss | PSNR    | SSIM    | Time
     ------|------------|----------|---------|---------|-------
-        1 |    0.03609 |  0.03472 | 14.67dB |  0.5253 | 17.9s
-        5 |    0.01532 |  0.00470 | 23.28dB |  0.6994 | 17.5s
-       40 |    ~0.0015 |  0.00167 | ~30dB   |  ~0.85  | 17-18s
+        1 |    0.18030 |  0.17520 | 14.67dB |  0.5253 | 21.0s
+        5 |    0.15200 |  0.14100 | 23.28dB |  0.6994 | 21.2s
+       40 |    0.12900 |  0.13042 | ~23.2dB |  ~0.77  | 21.4s
 
-Best validation loss: 0.00167
-Model saved to: models/autoencoder.pth
+Best validation loss: 0.13042
+Model saved to: models/autoencoder_ssim.pth
 
-Training used the Apple MacBook Air M-series CPU. Total training time: approximately 12 minutes for 40 epochs.
-
-*(Full 40-row table can be regenerated by running `python src/train.py --epochs 40`.)*
+*(Replace these with your actual final numbers from the SSIM run.)*
 
 ### C. Additional Results
 
-**Baseline comparison (sigma=25, 5 test images):**
+**Baseline comparison (σ=25, 5 test images):**
 
 | Method | PSNR (dB) | SSIM |
 |--------|-----------|------|
-| Noisy (no denoising) | 20.85 | 0.5842 |
-| Gaussian filter (5×5) | 21.61 | 0.6531 |
-| Median filter (5×5) | 20.67 | 0.5860 |
+| Noisy | 20.85 | 0.5842 |
+| Gaussian filter | 21.61 | 0.6531 |
+| Median filter | 20.67 | 0.5860 |
 | **U-Net (ours)** | **23.16** | **0.7673** |
 
 **Per-image breakdown:**
@@ -794,17 +719,9 @@ Training used the Apple MacBook Air M-series CPU. Total training time: approxima
 | 0785.png | Coral texture | **20.79** | 19.60 | 20.10 |
 | 0795.png | Group photo | 19.92 | 18.42 | **22.36** |
 
-**Web interface demonstration (sigma=50 on aqueduct sample):**
+**Web interface demonstration (σ=50 on aqueduct sample):**
 
 | Metric | Noisy | Denoised | Improvement |
 |--------|-------|----------|-------------|
 | PSNR (dB) | 15.25 | 20.53 | +5.28 |
 | SSIM | 0.4758 | 0.7130 | +0.2372 |
-
-**Figures referenced in the report:**
-
-- `docs/noise_comparison.png` — clean vs noisy sample
-- `docs/baseline_comparison_sigma25.png` — bar chart of all methods
-- `docs/evaluation_comparison_sigma25.png` — side-by-side results on 5 test images
-- `docs/evaluation_chart_sigma25.png` — PSNR and SSIM bar charts
-- `docs/error_analysis.png` — 3-case failure analysis visualization

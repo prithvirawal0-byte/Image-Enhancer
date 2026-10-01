@@ -24,9 +24,14 @@ from model import UNetDenoiser
 # ---------------- CONFIG ----------------
 APP_TITLE = "Image Denoiser"
 APP_SUBTITLE = "U-Net Convolutional Autoencoder"
-MODEL_PATH = "models/autoencoder.pth"
+MODEL_PATH = "models/autoencoder_ssim.pth"
 SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "samples")
 NOISY_SAMPLES_DIR = os.path.join(os.path.dirname(__file__), "noisy_samples")
+
+# Post-processing defaults (applied automatically)
+SHARPEN_AMOUNT = 0.6
+SHARPEN_RADIUS = 1.0
+DETAIL_STRENGTH = 0.3
 
 
 # ---------------- STYLING ----------------
@@ -99,6 +104,31 @@ def denoise(model, device, noisy_img):
     return np.clip(out, 0.0, 1.0)
 
 
+def sharpen_output(img, amount=SHARPEN_AMOUNT, radius=SHARPEN_RADIUS,
+                   detail=DETAIL_STRENGTH):
+    """
+    Light post-processing to counteract MSE over-smoothing.
+    1. Unsharp mask — restores edge crispness
+    2. Detail boost — restores micro-texture
+
+    Amounts are fixed and applied automatically to every output.
+    """
+    # 1. Unsharp mask
+    if amount > 0:
+        blurred = cv2.GaussianBlur(img.astype(np.float32), (0, 0), radius)
+        img = cv2.addWeighted(img.astype(np.float32), 1 + amount,
+                              blurred, -amount, 0)
+        img = np.clip(img, 0.0, 1.0)
+
+    # 2. Detail boost
+    if detail > 0:
+        blurred2 = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 2.0)
+        high_pass = img.astype(np.float32) - blurred2
+        img = np.clip(img.astype(np.float32) + detail * high_pass, 0.0, 1.0)
+
+    return img
+
+
 def compute_psnr(pred, target):
     mse = np.mean((pred - target) ** 2)
     if mse == 0:
@@ -134,8 +164,8 @@ st.markdown(
 model, device = load_model()
 if model is None:
     st.error(
-        "Model file not found at `models/autoencoder.pth`. "
-        "Train the model first: `python src/train.py`"
+        f"Model file not found at `{MODEL_PATH}`. "
+        "Train the model first: `python src/train.py --save_path models/autoencoder_ssim.pth`"
     )
     st.stop()
 
@@ -168,7 +198,7 @@ with st.sidebar:
         sigma = None
 
     st.markdown("---")
-    st.caption("U-Net · 1.93M parameters")
+    st.caption("U-Net · 1.93M parameters · MSE+SSIM loss")
     st.caption("Trained on Div2K_Random100 · 40 epochs")
     st.caption(f"Device: `{device}`")
     st.markdown("---")
@@ -216,7 +246,6 @@ if mode == "📤 Upload your own":
             unsafe_allow_html=True,
         )
 else:
-    # Choose which sample set to show based on image state
     if image_state == "clean":
         active_dir = SAMPLES_DIR
         active_label = "Clean samples"
@@ -276,7 +305,8 @@ if input_img is not None:
             if image_state == "clean":
                 clean_img = input_img
                 noisy_img = add_gaussian_noise(clean_img, sigma)
-                denoised_img = denoise(model, device, noisy_img)
+                denoised_raw = denoise(model, device, noisy_img)
+                denoised_img = sharpen_output(denoised_raw)
 
                 psnr_noisy = compute_psnr(noisy_img, clean_img)
                 psnr_denoised = compute_psnr(denoised_img, clean_img)
@@ -285,7 +315,8 @@ if input_img is not None:
             else:
                 clean_img = None
                 noisy_img = input_img
-                denoised_img = denoise(model, device, noisy_img)
+                denoised_raw = denoise(model, device, noisy_img)
+                denoised_img = sharpen_output(denoised_raw)
                 psnr_noisy = psnr_denoised = None
                 ssim_noisy = ssim_denoised = None
 
@@ -357,6 +388,6 @@ if input_img is not None:
 
         st.markdown("---")
         st.caption(
-            "U-Net trained on Div2K_Random100 · 40 epochs · sigma=25"
+            "U-Net trained on Div2K_Random100 · 40 epochs · sigma=25 · "
+            "MSE+SSIM loss"
         )
-        

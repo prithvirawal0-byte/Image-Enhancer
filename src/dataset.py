@@ -45,17 +45,14 @@ class DenoisingDataset(Dataset):
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        # 1. Load image
         path = self.image_paths[idx]
         image = cv2.imread(path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # 2. Random crop
         h, w = image.shape[:2]
         ps = self.patch_size
 
         if h < ps or w < ps:
-            # If image smaller than patch, resize it up
             scale = max(ps / h, ps / w) + 0.1
             image = cv2.resize(image, (int(w * scale), int(h * scale)))
             h, w = image.shape[:2]
@@ -64,14 +61,11 @@ class DenoisingDataset(Dataset):
         left = np.random.randint(0, w - ps + 1)
         patch = image[top:top + ps, left:left + ps]
 
-        # 3. Normalize to [0, 1]
         clean = patch.astype(np.float32) / 255.0
 
-        # 4. Add Gaussian noise (also in [0, 1] range)
         noise = np.random.normal(0, self.sigma / 255.0, clean.shape).astype(np.float32)
         noisy = np.clip(clean + noise, 0.0, 1.0)
 
-        # 5. Convert to tensors (C, H, W)
         clean = torch.from_numpy(clean).permute(2, 0, 1).float()
         noisy = torch.from_numpy(noisy).permute(2, 0, 1).float()
 
@@ -113,7 +107,6 @@ def get_dataloaders(clean_dir, patch_size=128, sigma=25, batch_size=8,
 
 
 if __name__ == "__main__":
-    # Quick test
     loader, _ = get_dataloaders(
         clean_dir="data/clean",
         patch_size=128,

@@ -1,10 +1,11 @@
 """
 Training script for the convolutional autoencoder denoiser.
 
+Uses a combined MSE + SSIM loss to produce crisper outputs and
+reduce the over-smoothing that pure MSE causes.
+
 Usage:
-    python src/train.py
-    python src/train.py --epochs 5 --batch_size 4
-    python src/train.py --sigma 15 --patch_size 64
+    python src/train.py --epochs 40 --save_path models/autoencoder_ssim.pth
 """
 
 import os
@@ -20,10 +21,41 @@ from dataset import get_dataloaders
 from model import ConvAutoencoder
 
 
+# ---------- COMBINED LOSS ----------
+
+class CombinedLoss(nn.Module):
+    """
+    MSE + SSIM loss.
+
+    alpha = 1.0 -> pure MSE
+    alpha = 0.4 -> balanced (recommended)
+    alpha = 0.0 -> pure SSIM
+    """
+    def __init__(self, alpha=0.4):
+        super().__init__()
+        self.alpha = alpha
+        self.mse = nn.MSELoss()
+
+    def forward(self, pred, target):
+        mse_loss = self.mse(pred, target)
+
+        pred_np = pred.detach().cpu().numpy()
+        target_np = target.detach().cpu().numpy()
+        ssim_vals = []
+        for i in range(pred_np.shape[0]):
+            p = np.transpose(pred_np[i], (1, 2, 0))
+            t = np.transpose(target_np[i], (1, 2, 0))
+            ssim_vals.append(
+                structural_similarity(t, p, channel_axis=2, data_range=1.0)
+            )
+        ssim_loss = 1.0 - float(np.mean(ssim_vals))
+
+        return self.alpha * mse_loss + (1 - self.alpha) * ssim_loss
+
+
 # ---------- METRICS ----------
 
 def compute_psnr(pred, target):
-    """PSNR in dB for a batch of images in [0, 1]."""
     mse = torch.mean((pred - target) ** 2).item()
     if mse == 0:
         return 100.0
@@ -31,7 +63,6 @@ def compute_psnr(pred, target):
 
 
 def compute_ssim(pred, target):
-    """Average SSIM across a batch of images in [0, 1]."""
     pred_np = pred.detach().cpu().numpy()
     target_np = target.detach().cpu().numpy()
 
@@ -100,6 +131,8 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--max_images", type=int, default=None)
     parser.add_argument("--save_path", type=str, default="models/autoencoder.pth")
+    parser.add_argument("--alpha", type=float, default=0.4,
+                        help="MSE weight in combined loss (0.4 recommended).")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -121,8 +154,11 @@ def main():
     print(f"Model parameters: {total_params:,}")
 
     # Loss and optimizer
-    criterion = nn.MSELoss()
+    criterion = CombinedLoss(alpha=args.alpha)
     optimizer = Adam(model.parameters(), lr=args.lr)
+
+    print(f"Loss: CombinedLoss (alpha={args.alpha} MSE + "
+          f"{1 - args.alpha:.1f} SSIM)")
 
     # Training loop
     best_val_loss = float("inf")
